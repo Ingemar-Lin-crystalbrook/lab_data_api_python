@@ -4,6 +4,16 @@ import os
 import snowflake.connector
 from snowflake.connector import DictCursor
 from flask import Blueprint, request, abort, jsonify, make_response
+import logging
+import Adyen
+from Adyen.util import is_valid_hmac_notification
+
+
+adyen = Adyen.Adyen()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Make the Snowflake connection
 
@@ -97,3 +107,69 @@ def clerk_montly_sales(clerkid, year):
         return make_response(jsonify(res.fetchall()))
     except:
         abort(500, "Error reading from Snowflake. Check the logs for details.")
+
+@connector.route("/getLatestTransaction",methods=["GET"])
+def getLatestTransactions():
+    # if request.header.X-API-KEY != os.getenv("ADYEN_API_KEY"): #TODO check api key in request matches our api key.
+            #abort!
+
+    sql_string = '''
+    SELECT * FROM ADYEN_API.PUBLIC.TRANSACTIONS
+    ORDER BY eventDate DESC
+    LIMIT 1;
+    '''
+    try:
+        logger.info("Executing SQL query to get the latest transaction.")
+        res = conn.cursor(DictCursor).execute(sql_string)
+        result = res.fetchall()
+        logger.info("Query executed successfully. Returning result.")
+        return make_response(jsonify(result))
+    except Exception as e:
+        logger.error(f"Error reading from Snowflake: {str(e)}", exc_info=True)
+        abort(500, "Error reading from Snowflake. Check the logs for details.")
+
+@connector.route("/insertOneTransaction", methods=["POST"])
+def insertOneTransaction():
+
+    live = request.json.get("live")
+    keys_to_remove = ['hmacSignature', 'bookingDate', 'reason']
+    transaction = remove_keys(request.json.get("notificationItems")[0], keys_to_remove) 
+
+    # data = {param: request.json.get(param) for param in params} # get param from json body 
+
+    # transaction = data.get("notificationItems")[0] # get first notification item in notification items of request (transaction)
+
+    # params = ['pspReference', 'live', 'currency', 'value', 'eventCode', 'eventDate', 
+    #           'merchantAccountCode', 'merchantReference', 'originalReference', 
+    #           'paymentMethod', 'reason', 'success', "notificationItems"] # get hmacsignature for nested notifications items
+    
+    key = os.getenv("ADYEN_API_KEY") #setup environment variable in snowflake
+    hmac_validate = is_valid_hmac_notification(transaction, key) # might need to change the eventCode into Operations
+
+    if not hmac_validate:
+        logger.info(f"invalid hmac signature: " + str(expected_hmac))
+        abort(400, "Invalid hmac signature.")
+    
+    if not all(data.values()):
+        logger.info(f"missing params: " + str(data))
+        abort(400, "Missing one or more required parameters.")
+        
+    
+    sql_string = '''
+    INSERT INTO ADYEN_API.PUBLIC.TRANSACTIONS (
+        pspReference, live, currency, value, eventCode, eventDate, 
+        merchantAccountCode, merchantReference, originalReference, 
+        paymentMethod, reason, success
+    ) VALUES (
+        %(pspReference)s, %(live)s, %(currency)s, %(value)s, %(eventCode)s, %(eventDate)s, 
+        %(merchantAccountCode)s, %(merchantReference)s, %(originalReference)s, 
+        %(paymentMethod)s, %(reason)s, %(success)s
+    );
+    '''
+    
+    try:
+        conn.cursor(DictCursor).execute(sql_string, data)
+        conn.commit()
+        return make_response(jsonify({"message": "Transaction inserted successfully"}), 201)
+    except Exception as e:
+        abort(500, f"Error inserting into Snowflake: {str(e)}")

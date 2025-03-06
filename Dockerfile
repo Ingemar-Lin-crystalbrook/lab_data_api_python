@@ -1,6 +1,6 @@
 FROM python:3.8
 
-RUN pip install snowflake-snowpark-python flask ngrok
+RUN pip install snowflake-snowpark-python flask ngrok adyen
 
 COPY ./src /src
 
