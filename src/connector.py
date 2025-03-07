@@ -8,7 +8,6 @@ import logging
 import Adyen
 from Adyen.util import is_valid_hmac_notification
 
-
 adyen = Adyen.Adyen()
 
 # Configure logging
@@ -130,31 +129,33 @@ def getLatestTransactions():
 
 @connector.route("/insertOneTransaction", methods=["POST"])
 def insertOneTransaction():
+    # get transaction from request
+    transaction = request.json
 
-    live = request.json.get("live")
-    keys_to_remove = ['hmacSignature', 'bookingDate', 'reason']
-    transaction = remove_keys(request.json.get("notificationItems")[0], keys_to_remove) 
-
-    # data = {param: request.json.get(param) for param in params} # get param from json body 
-
-    # transaction = data.get("notificationItems")[0] # get first notification item in notification items of request (transaction)
-
-    # params = ['pspReference', 'live', 'currency', 'value', 'eventCode', 'eventDate', 
-    #           'merchantAccountCode', 'merchantReference', 'originalReference', 
-    #           'paymentMethod', 'reason', 'success', "notificationItems"] # get hmacsignature for nested notifications items
-    
-    key = os.getenv("ADYEN_API_KEY") #setup environment variable in snowflake
+    # get adyen hmac key and validate
+    key = os.getenv("ADYEN_HMAC_KEY") #setup environment variable in snowflake
+    logger.info(f"adyen_hmac_key is : {key}")
     hmac_validate = is_valid_hmac_notification(transaction, key) # might need to change the eventCode into Operations
 
+    # if validate failed, abort
     if not hmac_validate:
-        logger.info(f"invalid hmac signature: " + str(expected_hmac))
+        # logger.info(f"invalid hmac signature: " + str(expected_hmac))
+        # logger.info(f"invalid hmac signature: ").
+
         abort(400, "Invalid hmac signature.")
+
+    # select only necessary data
+    params = ['pspReference', 'live', 'currency', 'value', 'eventCode', 'eventDate', 
+              'merchantAccountCode', 'merchantReference', 'originalReference', 
+              'paymentMethod', 'reason', 'success'] # get hmacsignature for nested notifications items
+    
+    data = {param: transaction.get(param) for param in params} # get param from json body 
     
     if not all(data.values()):
         logger.info(f"missing params: " + str(data))
         abort(400, "Missing one or more required parameters.")
-        
     
+    # insert into Snowflake
     sql_string = '''
     INSERT INTO ADYEN_API.PUBLIC.TRANSACTIONS (
         pspReference, live, currency, value, eventCode, eventDate, 
@@ -166,7 +167,8 @@ def insertOneTransaction():
         %(paymentMethod)s, %(reason)s, %(success)s
     );
     '''
-    
+
+    # check if missing data
     try:
         conn.cursor(DictCursor).execute(sql_string, data)
         conn.commit()
