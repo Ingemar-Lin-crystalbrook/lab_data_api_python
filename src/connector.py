@@ -16,6 +16,33 @@ logger = logging.getLogger(__name__)
 
 # Make the Snowflake connection
 
+def extract_nested_values(data, keys):
+    """
+    Recursively extract specified keys and their values from a nested dictionary.
+
+    :param data: The dictionary to traverse.
+    :param keys: A list of keys to extract.
+    :return: A dictionary with the extracted key-value pairs.
+    """
+    extracted = {}
+
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if key in keys:
+                extracted[key] = value
+            elif isinstance(value, dict):
+                extracted.update(extract_nested_values(value, keys))
+            elif isinstance(value, list):
+                for item in value:
+                    extracted.update(extract_nested_values(item, keys))
+    elif isinstance(data, list):
+        for item in data:
+            extracted.update(extract_nested_values(item, keys))
+
+    
+
+    return extracted
+
 def connect() -> snowflake.connector.SnowflakeConnection:
     if os.path.isfile("/snowflake/session/token"):
         creds = {
@@ -134,7 +161,7 @@ def insertOneTransaction():
 
     # get adyen hmac key and validate
     key = os.getenv("ADYEN_HMAC_KEY") #setup environment variable in snowflake
-    logger.info(f"adyen_hmac_key is : {key}")
+    # logger.info(f"adyen_hmac_key is : {key}")
     hmac_validate = is_valid_hmac_notification(transaction, key) # might need to change the eventCode into Operations
 
     # if validate failed, abort
@@ -144,15 +171,15 @@ def insertOneTransaction():
 
         abort(400, "Invalid hmac signature.")
 
-    # select only necessary data
     params = ['pspReference', 'live', 'currency', 'value', 'eventCode', 'eventDate', 
               'merchantAccountCode', 'merchantReference', 'originalReference', 
               'paymentMethod', 'reason', 'success'] # get hmacsignature for nested notifications items
     
-    data = {param: transaction.get(param) for param in params} # get param from json body 
-    
-    if not all(data.values()):
-        logger.info(f"missing params: " + str(data))
+    transaction = extract_nested_values(transaction, params)
+    missing_params = [param for param in params if param not in transaction]
+
+    if missing_params:
+        logger.info(f"Missing params: {missing_params}")
         abort(400, "Missing one or more required parameters.")
     
     # insert into Snowflake
@@ -168,9 +195,8 @@ def insertOneTransaction():
     );
     '''
 
-    # check if missing data
     try:
-        conn.cursor(DictCursor).execute(sql_string, data)
+        conn.cursor(DictCursor).execute(sql_string, transaction)
         conn.commit()
         return make_response(jsonify({"message": "Transaction inserted successfully"}), 201)
     except Exception as e:
