@@ -26,6 +26,6 @@ def resource_not_found(e):
 
 if __name__ == '__main__':
     if "NGROK_AUTHTOKEN" in os.environ:
-        listener = ngrok.forward(addr=f"localhost:8001", authtoken_from_env=True)
+        listener = ngrok.forward(addr=f"localhost:443", authtoken_from_env=True, domain="giving-personally-eft.ngrok-free.app")
 
-    app.run(port=8001, host='0.0.0.0')
+    app.run(port=443, host='0.0.0.0')
