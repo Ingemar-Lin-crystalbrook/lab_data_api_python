@@ -149,7 +149,6 @@ def batch_insert_transactions(transactions):
             cursor.executemany(sql_string, transactions)
             conn.commit()
         logger.info("Transactions inserted successfully")
-        return make_response(jsonify({"message": "Transactions inserted successfully"}), 201)
     except Exception as e:
         logger.error(f"Error inserting into Snowflake: {str(e)}")
         abort(500, f"Error inserting into Snowflake: {str(e)}")
