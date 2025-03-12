@@ -1,6 +1,7 @@
 import datetime
 import os
 import pytz
+import time
 import snowflake.connector
 from snowflake.connector import DictCursor
 from flask import Blueprint, request, abort, jsonify, make_response
@@ -8,7 +9,13 @@ import logging
 import Adyen
 from Adyen.util import is_valid_hmac_notification
 from dateutil import parser
+import threading
 
+# global buffer
+transaction_buffer = []
+buffer_lock = threading.Lock()
+
+# create adyen object to use adyen functions
 adyen = Adyen.Adyen()
 
 # Configure logging
@@ -117,8 +124,14 @@ def insertOneTransaction():
     for param in params:
         if param not in transaction:
             transaction[param] = None
-    
-    # insert into Snowflake
+
+    with buffer_lock:
+        transaction_buffer.append(transaction)
+        logger.info("Transaction received")
+        return make_response(jsonify({"message": "Transaction received"}), 201)
+
+def batch_insert_transactions(transactions):
+    logger.info(f"Inserting batch of {len(transactions)} into DB")
     sql_string = '''
     INSERT INTO ADYEN_API.PUBLIC.TRANSACTIONS (
         pspReference, live, currency, value, eventCode, eventDate, 
@@ -130,12 +143,34 @@ def insertOneTransaction():
         %(paymentMethodVariant)s, %(paymentMethod)s, %(reason)s, %(success)s
     );
     '''
-
+    
     try:
-        conn.cursor(DictCursor).execute(sql_string, transaction)
-        conn.commit()
-        logger.info("Transaction inserted successfully")
-        return make_response(jsonify({"message": "Transaction inserted successfully"}), 201)
+        with conn.cursor(DictCursor) as cursor:
+            cursor.executemany(sql_string, transactions)
+            conn.commit()
+        logger.info("Transactions inserted successfully")
+        return make_response(jsonify({"message": "Transactions inserted successfully"}), 201)
     except Exception as e:
-        logger.info(f"Error 500, Error inserting into Snowflake: {str(e)}")
+        logger.error(f"Error inserting into Snowflake: {str(e)}")
         abort(500, f"Error inserting into Snowflake: {str(e)}")
+
+def flush_buffer():
+    global transaction_buffer
+    with buffer_lock:
+        if not transaction_buffer:
+            logger.info("No transactions to insert.")
+            return
+        transaction_to_insert = transaction_buffer.copy()
+        transaction_buffer = []
+    batch_insert_transactions(transaction_to_insert) 
+
+def schedule_flush(interval_seconds):
+    def flush_periodically():
+        while True:
+            time.sleep(interval_seconds)
+            flush_buffer()
+    
+    t = threading.Thread(target=flush_periodically, daemon=True)
+    t.start()
+
+schedule_flush(3600)
