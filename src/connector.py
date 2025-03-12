@@ -128,6 +128,9 @@ def insertOneTransaction():
     with buffer_lock:
         transaction_buffer.append(transaction)
         logger.info("Transaction received")
+        # Check if buffer size has reached 100 transactions
+        if len(transaction_buffer) >= 100:
+            flush_buffer()
         return make_response(jsonify({"message": "Transaction received"}), 201)
 
 def batch_insert_transactions(transactions):
