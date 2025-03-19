@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email History for {{ customer_id }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .email-body {
+            font-size: 14px;
+            color: #333;
+            white-space: pre-wrap; /* Preserve formatting for email body */
+        }
+    </style>
+</head>
+<body>
+    <h1>Email History for Customer: {{ customer_id }}</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Sent Date</th>
+                <th>Email Subject</th>
+                <th>Email Body</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for email in emails %}
+            <tr>
+                <td>{{ email[2] }}</td>
+                <td>{{ email[0] }}</td>
+                <td class="email-body">{{ email[1] }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="3">No email history available for this customer.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

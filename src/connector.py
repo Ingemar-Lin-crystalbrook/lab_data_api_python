@@ -4,7 +4,7 @@ import pytz
 import time
 import snowflake.connector
 from snowflake.connector import DictCursor
-from flask import Blueprint, request, abort, jsonify, make_response
+from flask import Blueprint, request, abort, jsonify, make_response, render_template
 import logging
 import Adyen
 from Adyen.util import is_valid_hmac_notification
@@ -23,32 +23,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Make the Snowflake connection
-
-def extract_nested_values(data, keys):
-    """
-    Recursively extract specified keys and their values from a nested dictionary.
-
-    :param data: The dictionary to traverse.
-    :param keys: A list of keys to extract.
-    :return: A dictionary with the extracted key-value pairs.
-    """
-    extracted = {}
-
-    if isinstance(data, dict):
-        for key, value in data.items():
-            if key in keys:
-                extracted[key] = value
-            elif isinstance(value, dict):
-                extracted.update(extract_nested_values(value, keys))
-            elif isinstance(value, list):
-                for item in value:
-                    extracted.update(extract_nested_values(item, keys))
-    elif isinstance(data, list):
-        for item in data:
-            extracted.update(extract_nested_values(item, keys))
-
-    return extracted
-
 def connect() -> snowflake.connector.SnowflakeConnection:
     if os.path.isfile("/snowflake/session/token"):
         creds = {
@@ -82,6 +56,27 @@ connector = Blueprint('connector', __name__)
 
 ## Top 10 customers in date range
 dateformat = '%Y-%m-%d'
+
+@connector.route('/email_history/<customer_id>')
+def email_history(customer_id):
+    conn = connect()
+    cursor = conn.cursor()
+
+    query = f"""
+    SELECT record_data 
+    FROM SALESFORCE.INBOUND_RAW."salesforce-live-three-streams_main_EmailMessage"
+    FROM email_history
+    WHERE record_data:ParentId = '{parentId}' OR 
+    record_data:RelatedToId = '{RelatedToId}'
+    ORDER BY CreatedDate DESC
+    """
+    cursor.execute(query)
+
+    email_history = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    return render_template('email_history.html', customer_id=customer_id, emails=email_history)
 
 @connector.route("/insertOneTransaction", methods=["POST"])
 def insertOneTransaction():
@@ -132,6 +127,31 @@ def insertOneTransaction():
         if len(transaction_buffer) >= 100:
             flush_buffer()
         return make_response(jsonify({"message": "Transaction received"}), 201)
+
+def extract_nested_values(data, keys):
+    """
+    Recursively extract specified keys and their values from a nested dictionary.
+
+    :param data: The dictionary to traverse.
+    :param keys: A list of keys to extract.
+    :return: A dictionary with the extracted key-value pairs.
+    """
+    extracted = {}
+
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if key in keys:
+                extracted[key] = value
+            elif isinstance(value, dict):
+                extracted.update(extract_nested_values(value, keys))
+            elif isinstance(value, list):
+                for item in value:
+                    extracted.update(extract_nested_values(item, keys))
+    elif isinstance(data, list):
+        for item in data:
+            extracted.update(extract_nested_values(item, keys))
+
+    return extracted
 
 def batch_insert_transactions(transactions):
     logger.info(f"Inserting batch of {len(transactions)} into DB")
