@@ -58,63 +58,51 @@ connector = Blueprint('connector', __name__)
 def email_history():
     parentId = request.args.get('ParentId')
     relatedToId = request.args.get('RelatedToId')
-    
-    conn = connect()
-    cursor = conn.cursor()
-
-    # Query the current role
-    cursor.execute("SELECT CURRENT_ROLE()")
-    current_role = cursor.fetchone()[0]
-
-    # Log the current role
-    logger.info(f"Current Role: {current_role}")
-
-    cursor.close()
-    conn.close()
 
     # If neither ParentId nor RelatedToId is provided, return early
     if not parentId and not relatedToId:
         return jsonify({"message": "Both ParentId and RelatedToId are empty"}), 200
 
     where_clause = []
-    if parentId:
-        where_clause.append(f"record_data:ParentId = '{parentId}'")
-    if relatedToId:
-        where_clause.append(f"record_data:RelatedToId = '{relatedToId}'")
+    values = []
 
-    # Combine conditions with AND
+    if parentId:
+        where_clause.append("record_data:ParentId = ?")
+        values.append(parentId)
+    if relatedToId:
+        where_clause.append("record_data:RelatedToId = ?")
+        values.append(relatedToId)
+
     where_clause_str = " AND ".join(where_clause)
 
-    # SQL query with dynamic WHERE clause
     query = f"""
     SELECT record_data 
     FROM SALESFORCE.INBOUND_RAW."salesforce-live-three-streams_main_EmailMessage"
     WHERE {where_clause_str}
-    ORDER BY record_data:CreatedDate DESC
+    ORDER BY record_data:CreatedDate DESC;
     """
 
     try:
-        # Attempt to connect to the database
-        conn = connect()  # Assuming this is your custom connect function
+        conn = connect()  # Secure connection
         cursor = conn.cursor()
 
-        # Execute the query
-        cursor.execute(query)
+        # logger.info(f"Executing query {query} with params {values}")
 
-        # Fetch all results
+        # Execute query with parameters
+        cursor.execute(query, values)
+
+        # Fetch results
         emails = cursor.fetchall()
-
+        logger.info(f"emails data type {type(emails)}")
+        emails = [dict(row) for row in cursor.fetchall()]
     except Exception as e:
-        # Catch any other unforeseen errors
         return jsonify({"error": "Error selecting from Snowflake", "message": str(e)}), 500
     finally:
-        # Ensure the cursor and connection are properly closed
         if cursor:
             cursor.close()
         if conn:
             conn.close()
 
-    # Return the email history to the template
     return render_template('archived_email.html', emails=emails)
 
 @connector.route("/insertOneTransaction", methods=["POST"])
