@@ -86,24 +86,33 @@ def email_history():
         conn = connect()  # Secure connection
         cursor = conn.cursor()
 
-        logger.info(f"see if placeholder is running")
+        logger.info(f"Connection established and cursor created.")
+
         # Execute query with parameters
         cursor.execute(query, tuple(values))
+        logger.info(f"Query executed: {query}")
 
         # Fetch results
         emails = cursor.fetchall()
-        logger.info(f"emails data type {type(emails)}")
-        logger.info(f"emails objects looks like {emails}")
-        # emails = [row[0] for row in cursor.fetchall()]
-
+        logger.info(f"Fetched {len(emails)} emails.")
+        
     except Exception as e:
+        logger.error(f"Error executing query: {str(e)}")  # Log any exceptions that occur
         return jsonify({"error": "Error selecting from Snowflake", "message": str(e)}), 500
     finally:
         if cursor:
+            logger.info(f"Closing cursor.")
             cursor.close()
         if conn:
+            logger.info(f"Closing connection.")
             conn.close()
 
+    # Ensure emails is not empty or None before rendering
+    if not emails:
+        logger.warning(f"No emails found.")
+        return render_template('archived_email.html', emails=[])  # Pass empty list if no emails found
+
+    # Return the emails to the template
     return render_template('archived_email.html', emails=emails)
 
 @connector.route("/insertOneTransaction", methods=["POST"])
