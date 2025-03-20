@@ -54,29 +54,68 @@ conn = connect()
 # Make the API endpoints
 connector = Blueprint('connector', __name__)
 
-## Top 10 customers in date range
-dateformat = '%Y-%m-%d'
-
-@connector.route('/email_history/<customer_id>')
-def email_history(customer_id):
+@connector.route('/email_history', methods=["GET"])
+def email_history():
+    parentId = request.args.get('ParentId')
+    relatedToId = request.args.get('RelatedToId')
+    
     conn = connect()
     cursor = conn.cursor()
 
-    query = f"""
-    SELECT record_data 
-    FROM SALESFORCE.INBOUND_RAW."salesforce-live-three-streams_main_EmailMessage"
-    FROM email_history
-    WHERE record_data:ParentId = '{parentId}' OR 
-    record_data:RelatedToId = '{RelatedToId}'
-    ORDER BY CreatedDate DESC
-    """
-    cursor.execute(query)
+    # Query the current role
+    cursor.execute("SELECT CURRENT_ROLE()")
+    current_role = cursor.fetchone()[0]
 
-    email_history = cursor.fetchall()
+    # Log the current role
+    logger.info(f"Current Role: {current_role}")
+
     cursor.close()
     conn.close()
 
-    return render_template('email_history.html', customer_id=customer_id, emails=email_history)
+    # If neither ParentId nor RelatedToId is provided, return early
+    if not parentId and not relatedToId:
+        return jsonify({"message": "Both ParentId and RelatedToId are empty"}), 200
+
+    where_clause = []
+    if parentId:
+        where_clause.append(f"record_data:ParentId = '{parentId}'")
+    if relatedToId:
+        where_clause.append(f"record_data:RelatedToId = '{relatedToId}'")
+
+    # Combine conditions with AND
+    where_clause_str = " AND ".join(where_clause)
+
+    # SQL query with dynamic WHERE clause
+    query = f"""
+    SELECT record_data 
+    FROM SALESFORCE.INBOUND_RAW."salesforce-live-three-streams_main_EmailMessage"
+    WHERE {where_clause_str}
+    ORDER BY record_data:CreatedDate DESC
+    """
+
+    try:
+        # Attempt to connect to the database
+        conn = connect()  # Assuming this is your custom connect function
+        cursor = conn.cursor()
+
+        # Execute the query
+        cursor.execute(query)
+
+        # Fetch all results
+        emails = cursor.fetchall()
+
+    except Exception as e:
+        # Catch any other unforeseen errors
+        return jsonify({"error": "Error selecting from Snowflake", "message": str(e)}), 500
+    finally:
+        # Ensure the cursor and connection are properly closed
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+    # Return the email history to the template
+    return render_template('archived_email.html', emails=emails)
 
 @connector.route("/insertOneTransaction", methods=["POST"])
 def insertOneTransaction():
@@ -190,7 +229,7 @@ def schedule_flush(interval_seconds):
     def flush_periodically():
         while True:
             time.sleep(interval_seconds)
-            flush_buffer()
+            # flush_buffer()
     
     t = threading.Thread(target=flush_periodically, daemon=True)
     t.start()

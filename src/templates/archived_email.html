@@ -3,58 +3,163 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Email History for {{ customer_id }}</title>
+    <title>Archived Emails</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <style>
         body {
             font-family: Arial, sans-serif;
-            margin: 20px;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
         }
-        h1 {
-            color: #333;
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            overflow-x: auto;
+        }
+        .email {
+            border-bottom: 1px solid #ddd;
+            padding: 10px;
+        }
+        .email-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
+        .email-content {
+            display: none;
+            margin-top: 10px;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 5px;
+        }
+        .toggle-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+        }
+        .search-bar {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
         }
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
         }
-        th, td {
-            padding: 12px;
+        td, th {
+            padding: 8px;
+            border: 1px solid #ddd;
             text-align: left;
-            border-bottom: 1px solid #ddd;
-        }
-        th {
-            background-color: #f2f2f2;
-        }
-        .email-body {
-            font-size: 14px;
-            color: #333;
-            white-space: pre-wrap; /* Preserve formatting for email body */
         }
     </style>
 </head>
 <body>
-    <h1>Email History for Customer: {{ customer_id }}</h1>
-    <table>
-        <thead>
-            <tr>
-                <th>Sent Date</th>
-                <th>Email Subject</th>
-                <th>Email Body</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for email in emails %}
-            <tr>
-                <td>{{ email[2] }}</td>
-                <td>{{ email[0] }}</td>
-                <td class="email-body">{{ email[1] }}</td>
-            </tr>
+    <div class="container">
+        <h2>Archived Emails</h2>
+        <input type="text" class="search-bar" placeholder="Search emails..." id="searchInput" onkeyup="searchEmails()">
+        
+        <div id="emailList">
+            {% if emails %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Subject</th>
+                            <th>Date</th>
+                            <th>Details</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for email in emails %}
+                        <tr class="email" data-email="{{ email.Subject }} {{ email.CreatedDate }} {{ email.FromName }} {{ email.FromAddress }} {{ email.ToAddress }} {{ email.HtmlBody }}">
+                            <td>{{ email.Subject }}</td>
+                            <td data-utc-date="{{ email.CreatedDate }}" class="datetime"></td>
+                            <td>
+                                <strong>From:</strong> {{ email.FromName }} &lt;{{ email.FromAddress }}&gt;<br>
+                                <strong>To:</strong> {{ email.ToAddress }}
+                            </td>
+                            <td><button class="toggle-btn" onclick="toggleEmail('email{{ loop.index }}')"><i class="fas fa-chevron-down"></i></button></td>
+                        </tr>
+                        <tr id="email{{ loop.index }}" class="email-content" style="display: none;">
+                            <td colspan="4">
+                                <p><strong>From:</strong> {{ email.FromName }} &lt;{{ email.FromAddress }}&gt;</p>
+                                <p><strong>To:</strong> {{ email.ToAddress }}</p>
+                                <div style="white-space: pre-wrap;">{{ email.HtmlBody | safe }}</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             {% else %}
-            <tr>
-                <td colspan="3">No email history available for this customer.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                <p>No emails available.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        function toggleEmail(id) {
+            let content = document.getElementById(id);
+            let button = content.previousElementSibling.querySelector(".toggle-btn i");
+            
+            if (content.style.display === "none" || content.style.display === "") {
+                content.style.display = "table-row";
+                button.classList.remove("fa-chevron-down");
+                button.classList.add("fa-chevron-up");
+            } else {
+                content.style.display = "none";
+                button.classList.remove("fa-chevron-up");
+                button.classList.add("fa-chevron-down");
+            }
+        }
+
+        function searchEmails() {
+            let input = document.getElementById("searchInput").value.toLowerCase();
+            let emails = document.querySelectorAll(".email");
+            
+            emails.forEach(email => {
+                let text = email.getAttribute("data-email").toLowerCase();
+                if (text.includes(input)) {
+                    email.style.display = "table-row";
+                } else {
+                    email.style.display = "none";
+                }
+            });
+        }
+
+        function convertUTCtoSydneyTime() {
+            let dateCells = document.querySelectorAll("td[data-utc-date]");
+
+            dateCells.forEach(cell => {
+                let utcDate = cell.getAttribute("data-utc-date");
+                if (utcDate) {
+                    let dateObj = new Date(utcDate);
+                    let sydneyTime = dateObj.toLocaleString("en-AU", {
+                        timeZone: "Australia/Sydney",
+                        year: "numeric",
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                        timeZoneName: "short"
+                    });
+
+                    cell.innerText = sydneyTime;
+                }
+            });
+        }
+
+        window.onload = convertUTCtoSydneyTime;
+    </script>
 </body>
 </html>

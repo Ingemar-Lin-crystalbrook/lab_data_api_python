@@ -7,4 +7,5 @@ COPY ./src /src
 WORKDIR /src
 
 EXPOSE 443
+
 CMD python app.py
