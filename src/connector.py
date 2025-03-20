@@ -7,6 +7,7 @@ from snowflake.connector import DictCursor
 from flask import Blueprint, request, abort, jsonify, make_response, render_template
 import logging
 import Adyen
+import json
 from Adyen.util import is_valid_hmac_notification
 from dateutil import parser
 import threading
@@ -64,56 +65,53 @@ def email_history():
         return jsonify({"message": "Both ParentId and RelatedToId are empty"}), 200
 
     where_clause = []
-    values = []
-
     if parentId:
-        where_clause.append("record_data:ParentId = ?")
-        values.append(parentId)
+        where_clause.append(f"record_data:ParentId = '{parentId}'")
     if relatedToId:
-        where_clause.append("record_data:RelatedToId = ?")
-        values.append(relatedToId)
+        where_clause.append(f"record_data:RelatedToId = '{relatedToId}'")
 
+    # Combine conditions with AND
     where_clause_str = " AND ".join(where_clause)
 
+    # SQL query with dynamic WHERE clause
     query = f"""
     SELECT record_data 
     FROM SALESFORCE.INBOUND_RAW."salesforce-live-three-streams_main_EmailMessage"
     WHERE {where_clause_str}
-    ORDER BY record_data:CreatedDate DESC;
+    ORDER BY record_data:CreatedDate DESC
     """
 
     try:
-        conn = connect()  # Secure connection
+        # Attempt to connect to the database
+        conn = connect()  # Assuming this is your custom connect function
         cursor = conn.cursor()
 
-        logger.info(f"Connection established and cursor created.")
+        # Execute the query
+        cursor.execute(query)
 
-        # Execute query with parameters
-        cursor.execute(query, tuple(values))
-        logger.info(f"Query executed: {query}")
+        # Fetch all results
+        raw_emails = cursor.fetchall()
 
-        # Fetch results
-        emails = cursor.fetchall()
-        logger.info(f"Fetched {len(emails)} emails.")
-        
+        # Convert the raw emails into a list of dictionaries (still with the full record_data)
+        emails = []
+        for row in raw_emails:
+            email_data_str = row[0]  # This is the raw JSON string
+            email_data = json.loads(email_data_str)  # Parse it into a dictionary
+            emails.append(email_data)  # Append the entire JSON object (not just specific fields)
+
     except Exception as e:
-        logger.error(f"Error executing query: {str(e)}")  # Log any exceptions that occur
+        # Catch any other unforeseen errors
         return jsonify({"error": "Error selecting from Snowflake", "message": str(e)}), 500
     finally:
+        # Ensure the cursor and connection are properly closed
         if cursor:
-            logger.info(f"Closing cursor.")
             cursor.close()
         if conn:
-            logger.info(f"Closing connection.")
             conn.close()
 
-    # Ensure emails is not empty or None before rendering
-    if not emails:
-        logger.warning(f"No emails found.")
-        return render_template('archived_email.html', emails=[])  # Pass empty list if no emails found
-
-    # Return the emails to the template
+    # Return the full email history to the template
     return render_template('archived_email.html', emails=emails)
+
 
 @connector.route("/insertOneTransaction", methods=["POST"])
 def insertOneTransaction():
