@@ -86,15 +86,16 @@ def email_history():
         conn = connect()  # Secure connection
         cursor = conn.cursor()
 
-        # logger.info(f"Executing query {query} with params {values}")
-
+        logger.info(f"see if placeholder is running")
         # Execute query with parameters
-        cursor.execute(query, values)
+        cursor.execute(query, tuple(values))
 
         # Fetch results
         emails = cursor.fetchall()
         logger.info(f"emails data type {type(emails)}")
-        emails = [dict(row) for row in cursor.fetchall()]
+        logger.info(f"emails objects looks like {emails}")
+        # emails = [row[0] for row in cursor.fetchall()]
+
     except Exception as e:
         return jsonify({"error": "Error selecting from Snowflake", "message": str(e)}), 500
     finally:
